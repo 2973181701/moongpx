@@ -542,7 +542,11 @@ let metadata_ranks : Array[(String, Int)] = [
 ]
 
 ///|
-fn parse_metadata(node : XNode, diags : Array[Diagnostic]) -> Metadata {
+fn parse_metadata(
+  src : String,
+  node : XNode,
+  diags : Array[Diagnostic],
+) -> Metadata {
   check_order(
     node.children,
     metadata_ranks,
@@ -584,6 +588,10 @@ fn parse_metadata(node : XNode, diags : Array[Diagnostic]) -> Metadata {
     },
     bounds: match child_named(node, "bounds") {
       Some(c) => parse_bounds(c, diags)
+      None => None
+    },
+    extensions: match child_named(node, "extensions") {
+      Some(c) => Some(raw_inner(src, c))
       None => None
     },
   }
@@ -1054,7 +1062,7 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
     )
   }
   let metadata = match metadata_nodes.length() > 0 {
-    true => Some(parse_metadata(metadata_nodes[0], diags))
+    true => Some(parse_metadata(src, metadata_nodes[0], diags))
     false => None
   }
   let waypoints : Array[Waypoint] = []

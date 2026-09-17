@@ -7,6 +7,8 @@
 ///   1. 坐标解析与范围校验（含那个不对称的经纬度边界）
 ///   2. 严格 xsd:decimal —— 指数记法必须被拒
 ///   3. 序列化时的指数陷阱 —— 输出必须永远是合法 GPX
+///   4. 解析真实文档、诊断行列号
+///   5. 序列化 + 往返一致性（模型 → 文本 → 模型，必须完全相等）
 
 ///|
 fn show_lat(text : String) -> Unit {
@@ -111,7 +113,39 @@ fn main {
   }
 
   println("")
-  println("=== 6. 一份有问题的文档 —— 诊断带行列号 ===")
+  println("=== 7. 序列化：模型 → 合规 GPX 文本 ===")
+  let doc2 = "<gpx version=\"1.1\" creator=\"moongpx demo\">" +
+    "<metadata><name>晨跑 &amp; 夜跑</name>" +
+    "<bounds minlat=\"31.1\" minlon=\"121.1\" maxlat=\"31.3\" maxlon=\"121.3\"/></metadata>" +
+    "<wpt lat=\"31.2304\" lon=\"121.4737\"><ele>0.0000001</ele><desc>a&lt;b</desc></wpt>" +
+    "<trk><name>早跑</name><trkseg>" +
+    "<trkpt lat=\"31.1\" lon=\"121.1\"><ele>4</ele></trkpt>" +
+    "</trkseg></trk>" +
+    "<extensions><myext vendor=\"acme\">私有数据</myext></extensions>" +
+    "</gpx>"
+  match @moongpx.parse_gpx(doc2) {
+    Ok(g) => {
+      let out = @moongpx.to_gpx(g)
+      println(out)
+      println(
+        "  ↑ 注意三处：① <ele> 输出 0.0000001 而不是 1e-7；" +
+        "② 文本里的 & 被转义成 &amp;；③ extensions 原样保留未被转义。",
+      )
+      println("")
+      match @moongpx.parse_gpx(out) {
+        Ok(g2) =>
+          println(
+            "  往返一致性 parse(to_gpx(g)) == g ：\{if g == g2 { "成立" } else { "失败" }}",
+          )
+        Err(d) =>
+          println("  往返后解析失败：\{@moongpx.format_diagnostics(d)}")
+      }
+    }
+    Err(d) => println(@moongpx.format_diagnostics(d))
+  }
+
+  println("")
+  println("=== 8. 一份有问题的文档 —— 诊断带行列号 ===")
   let bad = "<gpx version=\"1.0\" creator=\"x\">\n" +
     "  <wpt lon=\"180\"/>\n" +
     "  <trk><trkseg/></trk>\n" +

@@ -100,6 +100,8 @@ pub struct Metadata {
   time : String?
   keywords : String?
   bounds : Bounds?
+  /// `extensions` 的**原始内部 XML 文本**，用于无损往返。
+  extensions : String?
 } derive(Eq, Debug)
 
 ///|

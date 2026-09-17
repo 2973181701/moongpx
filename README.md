@@ -347,6 +347,21 @@ moon fmt            # 格式化
 moon run cmd/main   # 可运行示例
 ```
 
+### 关于 CI
+
+CI 配置放在 `ci/ci.yml`，**不在** `.github/workflows/` 下。启用只需一条命令：
+
+```bash
+mkdir -p .github/workflows && cp ci/ci.yml .github/workflows/ci.yml
+```
+
+为什么要绕这一下：GitHub 不允许 OAuth App 在没有 `workflow` scope 的情况下
+创建或修改工作流文件（无论走 git push 还是 Contents API，都会被拒）。
+把配置文件放在普通目录里可以让它**照常纳入版本控制、可审阅**，
+等 CI 权限就绪后复制过去即可生效，不必重写历史。
+
+内容本身是完整的：`moon check` → `moon fmt --check` → `moon test` → `moon run cmd/main`。
+
 ---
 
 ## 许可证

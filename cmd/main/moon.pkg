@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/math",
+  "2973181701/moongpx",
+}
+
+pkgtype(kind: "executable")

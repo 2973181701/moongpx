@@ -1,5 +1,8 @@
 # moongpx
 
+[![CI](https://github.com/2973181701/moongpx/actions/workflows/ci.yml/badge.svg)](https://github.com/2973181701/moongpx/actions/workflows/ci.yml)
+[![mooncakes.io](https://img.shields.io/badge/mooncakes.io-v0.1.0-blue)](https://mooncakes.io/package/2973181701/moongpx)
+
 > MoonBit 的 GPX（GPS Exchange Format）规范实现：解析、校验、序列化、版本迁移。
 
 GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两步路、咕咚、高德、

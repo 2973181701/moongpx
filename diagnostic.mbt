@@ -133,6 +133,11 @@ pub let code_trk_order : String = "E1015"
 ///|
 pub let code_invalid_fix : String = "E1016"
 
+///|
+/// `version` 不是 `"1.0"`。`parse_gpx_1_0` 专用——
+/// 与 `E1003`（不是 1.1）分开，报错信息能直接说清是哪个入口在要求什么。
+pub let code_version_not_1_0 : String = "E1017"
+
 // ── 警告级（不违反 schema，但语义可疑）──
 //
 // 判定标准：**错误** = 文档在校验器下不合格；**警告** = 合法但值得人看一眼。

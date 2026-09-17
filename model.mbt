@@ -89,6 +89,17 @@ pub struct Bounds {
 } derive(Eq, Debug)
 
 ///|
+/// 构造包围盒。四个坐标都必须已通过各自类型的范围校验。
+pub fn Bounds::new(
+  min_lat : Latitude,
+  min_lon : Longitude,
+  max_lat : Latitude,
+  max_lon : Longitude,
+) -> Bounds {
+  { min_lat, min_lon, max_lat, max_lon, }
+}
+
+///|
 /// `metadata` 元素（GPX 1.1 新增；1.0 里这些字段直接挂在根下）。
 pub struct Metadata {
   name : String?
@@ -138,6 +149,57 @@ pub struct Waypoint {
 } derive(Eq, Debug)
 
 ///|
+/// 构造一个只有经纬度的最小航点，其余字段全为空。
+///
+/// 模型字段是只读的：包外**既不能写结构体字面量，也不能改字段**。
+/// 所以要程序化生成 GPX（而不只是回写解析出来的数据），必须走构造函数。
+/// 字段类型自带范围校验（`Latitude` 只能由 `from_double` / `from_string` 产出），
+/// 因此这里不需要再检查一遍。
+pub fn Waypoint::new(lat : Latitude, lon : Longitude) -> Waypoint {
+  {
+    lat,
+    lon,
+    ele: None,
+    time: None,
+    magvar: None,
+    geoid_height: None,
+    name: None,
+    cmt: None,
+    desc: None,
+    src: None,
+    links: [],
+    sym: None,
+    wpt_type: None,
+    fix: None,
+    sat: None,
+    hdop: None,
+    vdop: None,
+    pdop: None,
+    age_of_dgps_data: None,
+    dgps_id: None,
+    extensions: None,
+  }
+}
+
+///|
+/// 返回设置了高程的副本，其余字段原样保留。
+pub fn Waypoint::with_ele(self : Waypoint, ele : Double?) -> Waypoint {
+  { ..self, ele, }
+}
+
+///|
+/// 返回设置了时间的副本，其余字段原样保留。
+pub fn Waypoint::with_time(self : Waypoint, time : String?) -> Waypoint {
+  { ..self, time, }
+}
+
+///|
+/// 返回设置了名称的副本，其余字段原样保留。
+pub fn Waypoint::with_name(self : Waypoint, name : String?) -> Waypoint {
+  { ..self, name, }
+}
+
+///|
 /// `rte` 元素。
 pub struct Route {
   name : String?
@@ -159,6 +221,12 @@ pub struct TrackSegment {
 } derive(Eq, Debug)
 
 ///|
+/// 构造一个轨迹段。
+pub fn TrackSegment::new(points : Array[Waypoint]) -> TrackSegment {
+  { points, extensions: None, }
+}
+
+///|
 /// `trk` 元素。
 pub struct Track {
   name : String?
@@ -173,6 +241,22 @@ pub struct Track {
 } derive(Eq, Debug)
 
 ///|
+/// 构造一条轨迹。
+pub fn Track::new(segments : Array[TrackSegment]) -> Track {
+  {
+    name: None,
+    cmt: None,
+    desc: None,
+    src: None,
+    links: [],
+    number: None,
+    track_type: None,
+    extensions: None,
+    segments,
+  }
+}
+
+///|
 /// GPX 文档根（`gpxType`）。
 pub struct Gpx {
   /// schema 规定固定为 `"1.1"`。
@@ -185,3 +269,17 @@ pub struct Gpx {
   tracks : Array[Track]
   extensions : String?
 } derive(Eq, Debug)
+
+///|
+/// 构造一个空的 GPX 1.1 文档。`version` 按 schema 固定为 `"1.1"`。
+pub fn Gpx::new(creator : String) -> Gpx {
+  {
+    version: "1.1",
+    creator,
+    metadata: None,
+    waypoints: [],
+    routes: [],
+    tracks: [],
+    extensions: None,
+  }
+}

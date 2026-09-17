@@ -1,4 +1,5 @@
 import {
   "Milky2018/xml",
+  "moonbitlang/core/math",
   "moonbitlang/core/string",
 }

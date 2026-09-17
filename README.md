@@ -197,7 +197,8 @@ let ok_but_suspicious = "<gpx version=\"1.1\" creator=\"x\"><wpt lat=\"1\" lon=\
 @moongpx.validate_gpx(ok_but_suspicious).length()  // 1
 ```
 
-`moon run cmd/main` 里有完整的 10 段可运行演示。
+`moon run cmd/main` 里有完整的 9 段可运行演示（坐标区间 → 数值格式 → 解析 →
+序列化 → 往返一致 → 诊断 → 独立校验 → 一次报出全部问题）。
 
 实际用法通常是「先校验，再决定要不要解析」：
 

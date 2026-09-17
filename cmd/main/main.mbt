@@ -113,7 +113,7 @@ fn main {
   }
 
   println("")
-  println("=== 7. 序列化：模型 → 合规 GPX 文本 ===")
+  println("=== 6. 序列化：模型 → 合规 GPX 文本 ===")
   let doc2 = "<gpx version=\"1.1\" creator=\"moongpx demo\">" +
     "<metadata><name>晨跑 &amp; 夜跑</name>" +
     "<bounds minlat=\"31.1\" minlon=\"121.1\" maxlat=\"31.3\" maxlon=\"121.3\"/></metadata>" +
@@ -145,7 +145,7 @@ fn main {
   }
 
   println("")
-  println("=== 8. 一份有问题的文档 —— 诊断带行列号 ===")
+  println("=== 7. 一份有问题的文档 —— 诊断带行列号 ===")
   let bad = "<gpx version=\"1.0\" creator=\"x\">\n" +
     "  <wpt lon=\"180\"/>\n" +
     "  <trk><trkseg/></trk>\n" +
@@ -163,7 +163,7 @@ fn main {
 
   println("")
   println(
-    "=== 9. 独立校验：warning 不阻塞解析，但会被记下来 ===",
+    "=== 8. 独立校验：warning 不阻塞解析，但会被记下来 ===",
   )
   let suspicious = "<gpx version=\"1.1\" creator=\"x\">" +
     "<wpt lat=\"1\" lon=\"1\"><ele>99999</ele></wpt>" +
@@ -184,7 +184,7 @@ fn main {
 
   println("")
   println(
-    "=== 10. 一次报出全部问题（error 与 warning 混合，不中断） ===",
+    "=== 9. 一次报出全部问题（error 与 warning 混合，不中断） ===",
   )
   let mixed = "<gpx version=\"1.1\" creator=\"x\">" +
     "<wpt lat=\"1\" lon=\"1\"><ele>99999</ele><fix>bogus</fix></wpt>" +

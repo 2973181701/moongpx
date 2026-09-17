@@ -630,10 +630,81 @@ fn simple_text_child(node : XNode, name : String) -> String? {
 }
 
 ///|
+/// 单个点的**语义**检查。这些都不违反 schema，所以一律只报 warning。
+///
+/// 判定标准：schema 允许 ≠ 合理。校验器的价值就在这一步——
+/// 一个能通过 XSD 但自相矛盾的文档，比一个干脆报错的文档更危险。
+fn check_waypoint_semantics(
+  node : XNode,
+  diags : Array[Diagnostic],
+  wpt : Waypoint,
+  bounds : Bounds?,
+) -> Unit {
+  // 海拔：地球表面最深处约 -11000 m，最高点约 9000 m
+  match wpt.ele {
+    Some(e) =>
+      if e > 9000.0 || e < -11000.0 {
+        diags.push(
+          Diagnostic::warning(
+            code_elevation_implausible,
+            "<ele> = \{format_decimal(e)} m 超出地球表面合理范围（约 -11000 ~ 9000 m），请确认单位是否为米",
+            node.line,
+            node.column,
+          ),
+        )
+      }
+    None => ()
+  }
+  // fix 与 sat 自相矛盾
+  match (wpt.fix, wpt.sat) {
+    (Some(f), Some(s)) =>
+      if f == FixNone && s > 0 {
+        diags.push(
+          Diagnostic::warning(
+            code_fix_sat_conflict,
+            "<fix> 是 none（无定位）但 <sat> 是 \{s}，两者矛盾",
+            node.line,
+            node.column,
+          ),
+        )
+      } else if f != FixNone && s == 0 {
+        diags.push(
+          Diagnostic::warning(
+            code_fix_sat_conflict,
+            "<fix> 是 \{f.to_string()}（有定位）但 <sat> 是 0，两者矛盾",
+            node.line,
+            node.column,
+          ),
+        )
+      }
+    _ => ()
+  }
+  // 点位落在声明的 bounds 之外
+  match bounds {
+    Some(b) =>
+      if wpt.lat.to_double() < b.min_lat.to_double() ||
+        wpt.lat.to_double() > b.max_lat.to_double() ||
+        wpt.lon.to_double() < b.min_lon.to_double() ||
+        wpt.lon.to_double() > b.max_lon.to_double() {
+        diags.push(
+          Diagnostic::warning(
+            code_out_of_bounds,
+            "点位 (\{wpt.lat.to_gpx_string()}, \{wpt.lon.to_gpx_string()}) 落在 metadata/bounds 声明的范围之外",
+            node.line,
+            node.column,
+          ),
+        )
+      }
+    None => ()
+  }
+}
+
+///|
 fn parse_waypoint(
   src : String,
   node : XNode,
   diags : Array[Diagnostic],
+  bounds : Bounds?,
 ) -> Waypoint? {
   check_order(
     node.children,
@@ -759,7 +830,7 @@ fn parse_waypoint(
           }
         None => None
       }
-      Some({
+      let wpt : Waypoint = {
         lat: la,
         lon: lo,
         ele: decimal_child(node, "ele", diags),
@@ -793,7 +864,9 @@ fn parse_waypoint(
           Some(c) => Some(raw_inner(src, c))
           None => None
         },
-      })
+      }
+      check_waypoint_semantics(node, diags, wpt, bounds)
+      Some(wpt)
     }
     _ => None
   }
@@ -834,7 +907,12 @@ let route_like_ranks : Array[(String, Int)] = [
 ]
 
 ///|
-fn parse_route(src : String, node : XNode, diags : Array[Diagnostic]) -> Route {
+fn parse_route(
+  src : String,
+  node : XNode,
+  diags : Array[Diagnostic],
+  bounds : Bounds?,
+) -> Route {
   check_order(
     node.children,
     route_like_ranks,
@@ -842,6 +920,23 @@ fn parse_route(src : String, node : XNode, diags : Array[Diagnostic]) -> Route {
     code_rte_order,
     "rte 的子元素顺序",
   )
+  let route_points : Array[Waypoint] = []
+  for c in children_named(node, "rtept") {
+    match parse_waypoint(src, c, diags, bounds) {
+      Some(w) => route_points.push(w)
+      None => ()
+    }
+  }
+  if route_points.length() == 0 {
+    diags.push(
+      Diagnostic::warning(
+        code_empty_segment,
+        "<rte> 没有任何 <rtept>",
+        node.line,
+        node.column,
+      ),
+    )
+  }
   {
     name: simple_text_child(node, "name"),
     cmt: simple_text_child(node, "cmt"),
@@ -866,16 +961,7 @@ fn parse_route(src : String, node : XNode, diags : Array[Diagnostic]) -> Route {
       Some(c) => Some(raw_inner(src, c))
       None => None
     },
-    points: {
-      let out : Array[Waypoint] = []
-      for c in children_named(node, "rtept") {
-        match parse_waypoint(src, c, diags) {
-          Some(w) => out.push(w)
-          None => ()
-        }
-      }
-      out
-    },
+    points: route_points,
   }
 }
 
@@ -884,18 +970,72 @@ fn parse_track_segment(
   src : String,
   node : XNode,
   diags : Array[Diagnostic],
+  bounds : Bounds?,
 ) -> TrackSegment {
-  {
-    points: {
-      let out : Array[Waypoint] = []
-      for c in children_named(node, "trkpt") {
-        match parse_waypoint(src, c, diags) {
-          Some(w) => out.push(w)
+  let points : Array[Waypoint] = []
+  let mut prev_epoch : Double? = None
+  let mut prev_wpt : Waypoint? = None
+  for c in children_named(node, "trkpt") {
+    match parse_waypoint(src, c, diags, bounds) {
+      Some(wpt) => {
+        // 时间单调性：同一段内时间应递增
+        match wpt.time {
+          Some(t) =>
+            match datetime_to_epoch(t) {
+              Some(e) => {
+                match prev_epoch {
+                  Some(pe) =>
+                    if e < pe {
+                      diags.push(
+                        Diagnostic::warning(
+                          code_time_not_monotonic,
+                          "轨迹点时间 \{t} 早于上一个点，同一 trkseg 内时间应递增",
+                          c.line,
+                          c.column,
+                        ),
+                      )
+                    }
+                  None => ()
+                }
+                prev_epoch = Some(e)
+              }
+              None => ()
+            }
           None => ()
         }
+        // 相邻点完全重合：疑似重复记录或 GPS 漂移
+        match prev_wpt {
+          Some(pw) =>
+            if pw.lat == wpt.lat && pw.lon == wpt.lon && pw.ele == wpt.ele {
+              diags.push(
+                Diagnostic::warning(
+                  code_duplicate_point,
+                  "相邻轨迹点完全相同（lat/lon/ele 一致），疑似重复记录或 GPS 漂移",
+                  c.line,
+                  c.column,
+                ),
+              )
+            }
+          None => ()
+        }
+        prev_wpt = Some(wpt)
+        points.push(wpt)
       }
-      out
-    },
+      None => ()
+    }
+  }
+  if points.length() == 0 {
+    diags.push(
+      Diagnostic::warning(
+        code_empty_segment,
+        "<trkseg> 没有任何 <trkpt>",
+        node.line,
+        node.column,
+      ),
+    )
+  }
+  {
+    points,
     extensions: match child_named(node, "extensions") {
       Some(c) => Some(raw_inner(src, c))
       None => None
@@ -904,7 +1044,12 @@ fn parse_track_segment(
 }
 
 ///|
-fn parse_track(src : String, node : XNode, diags : Array[Diagnostic]) -> Track {
+fn parse_track(
+  src : String,
+  node : XNode,
+  diags : Array[Diagnostic],
+  bounds : Bounds?,
+) -> Track {
   check_order(
     node.children,
     route_like_ranks,
@@ -912,6 +1057,20 @@ fn parse_track(src : String, node : XNode, diags : Array[Diagnostic]) -> Track {
     code_trk_order,
     "trk 的子元素顺序",
   )
+  let segments : Array[TrackSegment] = []
+  for c in children_named(node, "trkseg") {
+    segments.push(parse_track_segment(src, c, diags, bounds))
+  }
+  if segments.length() == 0 {
+    diags.push(
+      Diagnostic::warning(
+        code_empty_segment,
+        "<trk> 没有任何 <trkseg>",
+        node.line,
+        node.column,
+      ),
+    )
+  }
   {
     name: simple_text_child(node, "name"),
     cmt: simple_text_child(node, "cmt"),
@@ -936,13 +1095,7 @@ fn parse_track(src : String, node : XNode, diags : Array[Diagnostic]) -> Track {
       Some(c) => Some(raw_inner(src, c))
       None => None
     },
-    segments: {
-      let out : Array[TrackSegment] = []
-      for c in children_named(node, "trkseg") {
-        out.push(parse_track_segment(src, c, diags))
-      }
-      out
-    },
+    segments,
   }
 }
 
@@ -957,14 +1110,14 @@ let root_ranks : Array[(String, Int)] = [
 ]
 
 ///|
-/// 解析 GPX 文档。
+/// 解析 + 校验的核心：一次性跑完**所有**检查，中途不因错误而停止。
 ///
-/// 返回 `Ok(Gpx)` 表示 XML 结构完整且坐标等关键字段可用；
-/// 返回 `Err(诊断列表)` 表示存在无法继续的错误。
+/// 返回 `(模型?, 全部诊断)`。模型只在没有错误级诊断时可用；
+/// 诊断列表**始终包含全部问题**（含 warning），不会因为解析成功就被丢掉。
 ///
-/// 无论成功失败，**警告级诊断**都可能在成功路径上被丢弃——
-/// 需要完整诊断请用 `validate_gpx`（D6 实现）。
-pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
+/// 这就是 `parse_gpx`（要结果、只要错误）与 `validate_gpx`（不要结果、要全部）
+/// 两个公开入口的共同底座——同一套逻辑，两种视角。
+fn parse_gpx_core(src : String) -> (Gpx?, Array[Diagnostic]) {
   let diags : Array[Diagnostic] = []
   let events = @xml.Reader::from_string(src).read_events_until_eof() catch {
     @xml.XmlError::At(error=kind, span~) => {
@@ -976,7 +1129,7 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
           span.start.column,
         ),
       )
-      return Err(diags)
+      return (None, diags)
     }
   }
   let roots = build_xml_tree(events)
@@ -984,7 +1137,7 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
     diags.push(
       Diagnostic::error(code_root_not_gpx, "文档没有根元素", 1, 1),
     )
-    return Err(diags)
+    return (None, diags)
   }
   let root = roots[0]
   if root.name != "gpx" {
@@ -996,7 +1149,7 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
         root.column,
       ),
     )
-    return Err(diags)
+    return (None, diags)
   }
   // version：必填且固定为 "1.1"
   let version = match attr_of(root, "version") {
@@ -1065,20 +1218,26 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
     true => Some(parse_metadata(src, metadata_nodes[0], diags))
     false => None
   }
+  // bounds 先取出来：点位的越界检查要用它（schema 里 metadata 一定排在 wpt 之前，
+  // 所以这里拿到的 bounds 对后续所有点都有效）
+  let bounds = match metadata {
+    Some(m) => m.bounds
+    None => None
+  }
   let waypoints : Array[Waypoint] = []
   for c in children_named(root, "wpt") {
-    match parse_waypoint(src, c, diags) {
+    match parse_waypoint(src, c, diags, bounds) {
       Some(w) => waypoints.push(w)
       None => ()
     }
   }
   let routes : Array[Route] = []
   for c in children_named(root, "rte") {
-    routes.push(parse_route(src, c, diags))
+    routes.push(parse_route(src, c, diags, bounds))
   }
   let tracks : Array[Track] = []
   for c in children_named(root, "trk") {
-    tracks.push(parse_track(src, c, diags))
+    tracks.push(parse_track(src, c, diags, bounds))
   }
   let gpx : Gpx = {
     version,
@@ -1093,8 +1252,29 @@ pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
     },
   }
   if has_errors(diags) {
+    (None, diags)
+  } else {
+    (Some(gpx), diags)
+  }
+}
+
+///|
+/// 解析 GPX 文档。
+///
+/// 返回 `Ok(Gpx)` 表示 XML 结构完整、且没有违反 schema 的问题；
+/// 返回 `Err(诊断列表)` 表示存在错误。
+///
+/// ⚠️ **成功路径上的 warning 会被丢弃**——这是刻意的：`parse_gpx` 要的是
+/// "能不能用"，不是"完不完美"。想拿到包括 warning 在内的全部诊断，
+/// 用 `validate_gpx`。
+pub fn parse_gpx(src : String) -> Result[Gpx, Array[Diagnostic]] {
+  let (g, diags) = parse_gpx_core(src)
+  if has_errors(diags) {
     Err(diags)
   } else {
-    Ok(gpx)
+    match g {
+      Some(gpx) => Ok(gpx)
+      None => Err(diags)
+    }
   }
 }

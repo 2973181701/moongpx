@@ -12,7 +12,7 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 
 ## 状态
 
-**v0.1.0 开发中**（D1–D5 已完成：坐标类型 + 完整模型 + 解析器 + 序列化）
+**v0.1.0 开发中**（D1–D6 已完成：坐标类型 + 完整模型 + 解析器 + 序列化 + 独立校验）
 
 | 模块 | 状态 |
 |---|---|
@@ -20,19 +20,21 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 | 根元素 + `metadata` + 子元素顺序校验 | ✅ 已完成 |
 | `wpt` / `rte` / `trk` / `trkseg` 完整模型（含 `wptType` 全部 19 字段） | ✅ 已完成 |
 | `extensions` 无损保留（原始 XML 切片） | ✅ 已完成 |
-| 带行列号的诊断 | ✅ 已完成（解析阶段） |
+| 带行列号的诊断 | ✅ 已完成 |
 | 序列化 + 往返一致性 | ✅ 已完成 |
-| 独立的 `validate_gpx`（只校验不建模） | ⬜ 计划中 |
+| 独立的 `validate_gpx`（只校验不建模，含 warning 级语义检查） | ✅ 已完成 |
 | GPX 1.0 解析 + 1.0 ↔ 1.1 迁移 | ⬜ 计划中 |
+| 轨迹统计（距离 / 爬升 / 包围盒） | ⬜ 计划中 |
 
-测试：`moon test` **78 / 78 通过**。
+测试：`moon test` **117 / 117 通过**。
 
 ### 已知限制（当前开发版）
 
 - **不支持带命名空间前缀的元素名**：`<g:gpx xmlns:g="...">` 会被判为"根元素不是 `<gpx>`"。
   默认命名空间（`xmlns="..."`，真实文件里的绝大多数写法）不受影响。
   彻底解决需要换用底层库的 `NamespaceReader`，见「依赖行为约定」
-- `parse_gpx` 返回 `Err` 时，成功解析的部分会被丢弃——完整的"只校验不中断"入口是计划中的 `validate_gpx`
+- `parse_gpx` 返回 `Err` 时，成功解析的部分会被丢弃。
+  需要"列出全部问题"时用 `validate_gpx`，它会连同 warning 一起报出
 
 ---
 
@@ -52,6 +54,11 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 | **GPX 1.0 与 1.1 不兼容** | 老设备导出的 1.0 文件用 1.1 解析器直接读不了 |
 | 回写时 `&` 不转义 / `extensions` 被二次转义 | 前者产出非法 XML，后者把用户的私有扩展数据变成字面文本 |
 | 回写时 `\r` 不转义成 `&#13;` | 被 XML 换行规范化折成 LF，数据静默改变 |
+| `xsd:dateTime` 带时区偏移 | `09:00+08:00` 与 `01:00Z` 是同一时刻，但字符串比较会得出相反的结论 |
+| 相邻轨迹点完全重合 | 设备卡顿时常见，不做检查会让距离 / 配速统计凭空多出一段 |
+
+前 8 条是**合规问题**（文档在校验器下不合格），后 2 条是**数据质量问题**
+（文档合法，但算出来的结果不可信）。本库对两者分别给出 `Error` 与 `Warning`。
 
 ---
 
@@ -145,6 +152,65 @@ parse_gpx(to_gpx(g)) == g          // 模型完全相等
 to_gpx(parse_gpx(to_gpx(g))) == to_gpx(g)   // 幂等
 ```
 
+### 校验
+
+```moonbit
+validate_gpx(String)        -> Array[Diagnostic]   // 全部诊断，空数组 = 干净
+is_valid_gpx(String)        -> Bool                // 连 warning 都没有才算通过
+has_schema_errors(String)   -> Bool                // 只看 error
+validate_gpx_report(String) -> String              // 直接可打印的报告
+diagnostics_of_severity(Array[Diagnostic], Severity) -> Array[Diagnostic]
+```
+
+和 `parse_gpx` 共用同一套检查，差别在**视角**：
+
+| | `parse_gpx` | `validate_gpx` |
+|---|---|---|
+| 关心 | 能不能用 | 完不完美 |
+| 有 error 时 | 返回 `Err`，丢掉已解析的部分 | 照常报出，连同 warning 一起 |
+| 有 warning 时 | 成功路径上**丢弃** | 报出 |
+| 返回 | `Result[Gpx, ...]` | `Array[Diagnostic]`（空 = 干净） |
+
+**不会因为发现一个问题就停下**——一个文件里的多个问题会一次性全部报出。
+唯一的例外是 XML 语法本身坏了，拿不到事件流，此时只能报一条 `E1000`。
+
+```moonbit
+let src = "<gpx version=\"1.1\" creator=\"x\">" +
+  "<wpt lat=\"1\" lon=\"1\"><ele>99999</ele><fix>bogus</fix></wpt>" +
+  "<trk><name>空的</name></trk></gpx>"
+println(@moongpx.validate_gpx_report(src))
+// 共 3 条（1 错误 / 2 警告）：
+// 1:69  error    E1016  <fix> 取值非法："bogus"（只允许 none / 2d / 3d / dgps / pps，小写）
+// 1:32  warning  W1005  <ele> = 99999 m 超出地球表面合理范围（约 -11000 ~ 9000 m），请确认单位是否为米
+// 1:91  warning  W1006  <trk> 没有任何 <trkseg>
+```
+
+上面的文档里 `<ele>` 和 `<trk>` 只是可疑，所以 `parse_gpx` 照样返回 `Ok`——
+想看到它们必须用 `validate_gpx`：
+
+```moonbit
+let ok_but_suspicious = "<gpx version=\"1.1\" creator=\"x\"><wpt lat=\"1\" lon=\"1\"><ele>99999</ele></wpt></gpx>"
+
+@moongpx.parse_gpx(ok_but_suspicious) is Ok(_)   // true —— 文档合法
+@moongpx.has_schema_errors(ok_but_suspicious)    // false
+@moongpx.is_valid_gpx(ok_but_suspicious)         // false —— 但有可疑之处
+@moongpx.validate_gpx(ok_but_suspicious).length()  // 1
+```
+
+`moon run cmd/main` 里有完整的 10 段可运行演示。
+
+实际用法通常是「先校验，再决定要不要解析」：
+
+```moonbit
+if @moongpx.has_schema_errors(src) {
+  // 不合格，把问题列给用户看，不往下走
+  println(@moongpx.validate_gpx_report(src))
+} else {
+  // 合格；warning 只是提醒，照常解析
+  match @moongpx.parse_gpx(src) { Ok(g) => use(g), Err(_) => () }
+}
+```
+
 ### 数据模型
 
 `Gpx` / `Metadata` / `Waypoint` / `Route` / `Track` / `TrackSegment` /
@@ -186,7 +252,21 @@ has_errors(Array[Diagnostic]) -> Bool
 | `E1010` / `E1011` | 非法 `xsd:dateTime` / `xsd:decimal` |
 | `E1013` / `E1014` / `E1015` | `wpt` / `rte` / `trk` 子元素顺序错误 |
 | `E1016` | `fix` 取值非法 |
-| `W1001` | `bounds` 的 `min` 大于 `max`（不违反 schema，语义可疑） |
+
+**警告级**（不违反 schema，但语义可疑——不会被 `parse_gpx` 当成失败原因）：
+
+| 代码 | 含义 |
+|---|---|
+| `W1001` | `bounds` 的 `min` 大于 `max` |
+| `W1002` | 同一 `trkseg` 内后一个点的时间早于前一个点 |
+| `W1003` | 相邻两个点的 `lat` / `lon` / `ele` 完全相同 |
+| `W1004` | `fix` 与 `sat` 自相矛盾（如 `fix=none` 却 `sat=9`） |
+| `W1005` | `ele` 超出地球表面合理范围（约 -11000 ~ 9000 m） |
+| `W1006` | `trk` / `trkseg` / `rte` 没有任何点 |
+| `W1007` | 点位落在 `metadata/bounds` 声明的范围之外 |
+
+`W1002` 的时间比较会**折算时区**——`09:00+08:00` 与 `01:00Z` 被认作同一时刻，
+不会因为字符串长得不一样就判错。
 
 ### 坐标类型
 
@@ -255,6 +335,31 @@ MoonBit 的 `Double::to_string` 对 `1e-7`、`1e+21` 这类值会输出**指数�
 
 也就是说，一个 `lat="0.0000001"` 的合法输入，如果直接回写，会产出**非法 GPX 文档**。
 `format_decimal` 把指数形式展开成纯十进制（`"0.0000001"`），保证输出始终合规。
+
+### `Error` 与 `Warning`：一条明确的界线
+
+GPX 的约束分两类，混在一起会让调用方无所适从。本库的判定标准是：
+
+> **Error** = 把这份文档丢进官方 XSD 校验器，它会判不合格。
+> **Warning** = 校验器会放行，但人看一眼就知道有问题。
+
+举几个对照：
+
+| 现象 | 级别 | 为什么 |
+|---|---|---|
+| `<wpt>` 缺 `lat` 属性 | Error | schema 里 `lat` 是 `use="required"` |
+| `<fix>bogus</fix>` | Error | `fixType` 是枚举，没有这个值 |
+| `<ele>99999</ele>` | Warning | `xsd:decimal` 接受任意小数，schema 不管物理合理性 |
+| `<fix>none</fix>` 配 `<sat>9</sat>` | Warning | 两个字段各自合法，放一起才荒谬 |
+| 轨迹点时间倒流 | Warning | schema 里 `time` 只是可选字段，没有任何顺序约束 |
+| `<trk>` 里没有 `<trkseg>` | Warning | `trkseg` 的 `minOccurs` 是 0 |
+
+这条界线带来一个直接后果：**warning 绝不能让 `parse_gpx` 失败**。
+一个海拔写着 99999 的文件依然是合法 GPX，拒绝解析它是越权。
+所以 warning 只在 `validate_gpx` 里出现，`parse_gpx` 成功路径上会丢掉它们。
+
+反过来说，这也意味着**只用 `parse_gpx` 会漏掉数据质量问题**。
+处理别人给的文件时，正确的顺序是先 `validate_gpx` 扫一遍，再决定要不要用。
 
 ### 复用生态 XML 解析器，不自造
 

@@ -134,9 +134,37 @@ pub let code_trk_order : String = "E1015"
 pub let code_invalid_fix : String = "E1016"
 
 // ── 警告级（不违反 schema，但语义可疑）──
+//
+// 判定标准：**错误** = 文档在校验器下不合格；**警告** = 合法但值得人看一眼。
+// 警告绝不会被 `parse_gpx` 当成失败原因，只在 `validate_gpx` 里出现。
 
 ///|
+/// `bounds` 的 `min` 大于 `max`。
 pub let code_bounds_order : String = "W1001"
+
+///|
+/// 同一 `trkseg` 内后一个点的时间早于前一个点。
+pub let code_time_not_monotonic : String = "W1002"
+
+///|
+/// 相邻两个轨迹点的 `lat` / `lon` / `ele` 完全相同。
+pub let code_duplicate_point : String = "W1003"
+
+///|
+/// `fix` 与 `sat` 自相矛盾（如 `fix=none` 却 `sat=9`，或 `fix=3d` 却 `sat=0`）。
+pub let code_fix_sat_conflict : String = "W1004"
+
+///|
+/// `ele` 超出地球表面的合理范围（约 -11000 ~ 9000 m）。
+pub let code_elevation_implausible : String = "W1005"
+
+///|
+/// `trk` / `trkseg` / `rte` 没有任何点。
+pub let code_empty_segment : String = "W1006"
+
+///|
+/// 点位落在 `metadata/bounds` 声明的范围之外。
+pub let code_out_of_bounds : String = "W1007"
 
 // ── XML 层 ──
 

@@ -162,6 +162,36 @@ fn main {
   }
 
   println("")
+  println(
+    "=== 9. 独立校验：warning 不阻塞解析，但会被记下来 ===",
+  )
+  let suspicious = "<gpx version=\"1.1\" creator=\"x\">" +
+    "<wpt lat=\"1\" lon=\"1\"><ele>99999</ele></wpt>" +
+    "<trk><name>空的</name></trk></gpx>"
+  match @moongpx.parse_gpx(suspicious) {
+    Ok(_) => println("  parse_gpx   → Ok（文档合法，可以正常用）")
+    Err(d) =>
+      println("  parse_gpx   → Err: \{@moongpx.format_diagnostics(d)}")
+  }
+  println("  is_valid_gpx      = \{@moongpx.is_valid_gpx(suspicious)}")
+  println("  has_schema_errors = \{@moongpx.has_schema_errors(suspicious)}")
+  println(
+    "  validate_gpx      = \{@moongpx.validate_gpx(suspicious).length()} 条：",
+  )
+  for d in @moongpx.validate_gpx(suspicious) {
+    println("    \{d.to_string()}")
+  }
+
+  println("")
+  println(
+    "=== 10. 一次报出全部问题（error 与 warning 混合，不中断） ===",
+  )
+  let mixed = "<gpx version=\"1.1\" creator=\"x\">" +
+    "<wpt lat=\"1\" lon=\"1\"><ele>99999</ele><fix>bogus</fix></wpt>" +
+    "<trk><name>空的</name></trk></gpx>"
+  println(@moongpx.validate_gpx_report(mixed))
+
+  println("")
   println("示例结束。")
 }
 

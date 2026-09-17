@@ -1,0 +1,16 @@
+# 统一换行符为 LF，避免 Windows / macOS 之间的无意义整文件 diff
+* text=auto eol=lf
+
+# MoonBit 源码
+*.mbt text eol=lf
+*.mbti text eol=lf
+
+# 配置文件
+*.mod text eol=lf
+*.pkg text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+
+# 二进制
+*.wasm binary
+*.png binary

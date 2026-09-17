@@ -4,3 +4,5 @@ target/
 target
 .mooncakes/
 .moonagent/
+# moon info 生成的公开 API 快照（构建产物，随 moon info 重新生成）
+*.generated.mbti

@@ -12,7 +12,8 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 
 ## 状态
 
-**v0.1.0 开发中**（D1–D6 已完成：坐标类型 + 完整模型 + 解析器 + 序列化 + 独立校验）
+**v0.1.0 开发中**（D1–D7 已完成：坐标类型 + 完整模型 + 解析器 + 序列化 +
+独立校验 + GPX 1.0 迁移 + 轨迹统计）
 
 | 模块 | 状态 |
 |---|---|
@@ -23,10 +24,10 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 | 带行列号的诊断 | ✅ 已完成 |
 | 序列化 + 往返一致性 | ✅ 已完成 |
 | 独立的 `validate_gpx`（只校验不建模，含 warning 级语义检查） | ✅ 已完成 |
-| GPX 1.0 解析 + 1.0 ↔ 1.1 迁移 | ⬜ 计划中 |
-| 轨迹统计（距离 / 爬升 / 包围盒） | ⬜ 计划中 |
+| GPX 1.0 解析 + 升级为 1.1 模型 | ✅ 已完成 |
+| 轨迹统计（距离 / 爬升 / 包围盒 / 时长） | ✅ 已完成 |
 
-测试：`moon test` **117 / 117 通过**。
+测试：`moon test` **163 / 163 通过**。
 
 ### 已知限制（当前开发版）
 
@@ -35,6 +36,8 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
   彻底解决需要换用底层库的 `NamespaceReader`，见「依赖行为约定」
 - `parse_gpx` 返回 `Err` 时，成功解析的部分会被丢弃。
   需要"列出全部问题"时用 `validate_gpx`，它会连同 warning 一起报出
+- **GPX 1.0 → 1.1 是单向的**：反向 1.1 → 1.0 会丢 `extensions` 与
+  `fix`/`sat` 等精度字段，本库不提供
 
 ---
 
@@ -197,8 +200,8 @@ let ok_but_suspicious = "<gpx version=\"1.1\" creator=\"x\"><wpt lat=\"1\" lon=\
 @moongpx.validate_gpx(ok_but_suspicious).length()  // 1
 ```
 
-`moon run cmd/main` 里有完整的 9 段可运行演示（坐标区间 → 数值格式 → 解析 →
-序列化 → 往返一致 → 诊断 → 独立校验 → 一次报出全部问题）。
+`moon run cmd/main` 里有完整的 11 段可运行演示（坐标区间 → 数值格式 → 解析 →
+序列化 → 往返一致 → 诊断 → 独立校验 → 一次报出全部问题 → 1.0 迁移 → 轨迹统计）。
 
 实际用法通常是「先校验，再决定要不要解析」：
 
@@ -212,6 +215,73 @@ if @moongpx.has_schema_errors(src) {
 }
 ```
 
+### GPX 1.0 与版本迁移
+
+```moonbit
+parse_gpx_1_0(String) -> Result[Gpx, Array[Diagnostic]]  // 解析 1.0 并升级为 1.1 模型
+parse_gpx_any(String) -> Result[Gpx, Array[Diagnostic]]  // 按 version 属性自动分派
+detect_gpx_version(String) -> String?                    // 只读 version 属性，不校验
+```
+
+GPX 1.0（2004）与 1.1 不兼容，而且**不是子集关系**：
+
+| 差异 | GPX 1.0 | GPX 1.1 |
+|---|---|---|
+| 元数据位置 | `name` `desc` `author` `email` `url` `urlname` `time` `keywords` `bounds` 直接挂在根下 | 全部包在 `<metadata>` 里 |
+| 链接 | `<url>` + `<urlname>` | `<link href>` + `<link><text>` |
+| 作者 | `<author>` 与 `<email>` 都是纯文本 | `personType`（含 name / email / link） |
+| 邮箱 | 完整地址 `me@example.com` | 拆成 `id` + `domain` 两个必填属性 |
+| 朝向 / 速度 | `<course>` `<speed>` 是 trkpt 的正式子元素 | 没有（改放 `extensions`） |
+| 命名空间 | `.../GPX/1/0` | `.../GPX/1/1` |
+
+迁移映射：
+
+| 1.0 | → 1.1 |
+|---|---|
+| 根级 `name` `desc` `time` `keywords` `bounds` | `metadata` 对应字段 |
+| `<author>张三</author>` | `metadata.author.name` |
+| `<email>me@example.com</email>` | `Email { id: "me", domain: "example.com" }`（按第一个 `@` 拆） |
+| `<url>` + `<urlname>` | `Link { href, text }` |
+| trkpt 的 `<course>` / `<speed>` | `Waypoint.extensions` 原文 |
+
+`parse_gpx_1_0` 返回的模型 `version` 固定是 `"1.1"`——**迁移是单向的**。
+反向 1.1 → 1.0 会丢 `extensions` 与精度字段，本库不做。
+
+两个入口互不越界：`parse_gpx` 只接受 1.1，`parse_gpx_1_0` 只接受 1.0。
+拿到的文件版本不确定时用 `parse_gpx_any`。
+
+实现上 1.0 是**独立解析路径**（`parse10.mbt`），没有给 1.1 的解析函数加
+版本分支——后者会让每个函数都拖着一个 `match`，且有误伤 1.1 的风险。
+
+### 轨迹统计
+
+```moonbit
+haversine_m(Waypoint, Waypoint) -> Double       // 半正矢大圆距离
+path_distance_m(Array[Waypoint]) -> Double
+track_distance_m(Track) -> Double
+climb_m(Array[Waypoint], Double) -> (Double, Double)   // (爬升, 下降)
+bounds_of(Array[Waypoint]) -> Bounds?
+track_stats(Track) -> TrackStats
+```
+
+两个约定：
+
+1. **跨 `trkseg` 不相连**。`trkseg` 表示 GPS 信号中断后重新捕获，
+   段间位移不是真实运动轨迹，计入距离会凭空多出一大截。
+2. **爬升必须带阈值**。GPS 高程噪声在几米量级，朴素累加相邻点高差
+   会把来回抖动放大成几百米的假爬升——这是开源实现里最常见的 bug。
+   `climb_m` 默认阈值 3 m，传 `0.0` 可关闭过滤。
+
+```moonbit
+let s = @moongpx.track_stats(track)
+// s.distance_m / s.ascend_m / s.descend_m / s.min_ele / s.max_ele
+// s.bounds / s.start_time / s.end_time / s.duration_s
+```
+
+`start_time` / `end_time` 取的是**真正的最早/最晚**，不是首尾点——
+轨迹时间可能不单调（见 `W1002`），直接取首尾会算错。
+时长按 `xsd:dateTime` 的时区折算后相减。
+
 ### 数据模型
 
 `Gpx` / `Metadata` / `Waypoint` / `Route` / `Track` / `TrackSegment` /
@@ -221,6 +291,20 @@ if @moongpx.has_schema_errors(src) {
 `Waypoint` 覆盖 `wptType` 的全部 19 个字段（`ele` `time` `magvar` `geoidheight`
 `name` `cmt` `desc` `src` `link` `sym` `type` `fix` `sat` `hdop` `vdop` `pdop`
 `ageofdgpsdata` `dgpsid` `extensions`）。
+
+模型字段是**只读**的：包外既不能写结构体字面量，也不能改字段——
+所以程序化生成 GPX 要走构造函数：
+
+```moonbit
+Waypoint::new(lat, lon).with_ele(Some(10.0)).with_time(Some("2020-01-01T00:00:00Z"))
+TrackSegment::new(points)
+Track::new(segments)
+Bounds::new(min_lat, min_lon, max_lat, max_lon)
+Gpx::new(creator)
+```
+
+（给字段加 `mut` 这条路走不通：MoonBit 的 `unused_mut` 只看包内是否真的
+写入过该字段，加不加 `pub` 都是错误级。构造函数是唯一解。）
 
 ### 诊断
 
@@ -253,6 +337,7 @@ has_errors(Array[Diagnostic]) -> Bool
 | `E1010` / `E1011` | 非法 `xsd:dateTime` / `xsd:decimal` |
 | `E1013` / `E1014` / `E1015` | `wpt` / `rte` / `trk` 子元素顺序错误 |
 | `E1016` | `fix` 取值非法 |
+| `E1017` | `version` 不是 `"1.0"`（`parse_gpx_1_0` 专用） |
 
 **警告级**（不违反 schema，但语义可疑——不会被 `parse_gpx` 当成失败原因）：
 

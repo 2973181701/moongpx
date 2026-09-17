@@ -192,6 +192,72 @@ fn main {
   println(@moongpx.validate_gpx_report(mixed))
 
   println("")
+  println("=== 10. GPX 1.0 解析并升级为 1.1 ===")
+  let g10 = "<gpx version=\"1.0\" creator=\"老设备\">" +
+    "<name>周末徒步</name>" +
+    "<author>张三</author><email>zhangsan@example.com</email>" +
+    "<url>http://example.com</url><urlname>示例</urlname>" +
+    "<trk><trkseg>" +
+    "<trkpt lat=\"31.2304\" lon=\"121.4737\"><ele>10</ele>" +
+    "<course>45.5</course><speed>1.25</speed></trkpt>" +
+    "<trkpt lat=\"31.2404\" lon=\"121.4837\"><ele>40</ele></trkpt>" +
+    "</trkseg></trk></gpx>"
+  match @moongpx.parse_gpx_1_0(g10) {
+    Ok(g) => {
+      println("  version = \{g.version}（1.0 文档已转成 1.1 模型）")
+      match g.metadata {
+        Some(m) => {
+          match m.name {
+            Some(n) => println("  根级 <name> → metadata.name = \{n}")
+            None => ()
+          }
+          match m.author {
+            Some(p) =>
+              match p.email {
+                Some(e) =>
+                  println("  <email> 整串 → id=\{e.id}  domain=\{e.domain}")
+                None => ()
+              }
+            None => ()
+          }
+          if m.links.length() > 0 {
+            println("  <url> → link.href = \{m.links[0].href}")
+          }
+        }
+        None => ()
+      }
+      let pt = g.tracks[0].segments[0].points[0]
+      match pt.extensions {
+        Some(x) => println("  <course>/<speed> → extensions = \{x}")
+        None => ()
+      }
+    }
+    Err(d) => println(@moongpx.format_diagnostics(d))
+  }
+
+  println("")
+  println("=== 11. 轨迹统计 ===")
+  match @moongpx.parse_gpx_1_0(g10) {
+    Ok(g) =>
+      if g.tracks.length() > 0 {
+        let s = @moongpx.track_stats(g.tracks[0])
+        println("  点数 = \{s.point_count}")
+        println("  距离 = \{@moongpx.format_decimal(s.distance_m)} m")
+        println(
+          "  爬升 = \{@moongpx.format_decimal(s.ascend_m)} m   下降 = \{@moongpx.format_decimal(s.descend_m)} m",
+        )
+        match (s.min_ele, s.max_ele) {
+          (Some(lo), Some(hi)) =>
+            println(
+              "  高程 = \{@moongpx.format_decimal(lo)} ~ \{@moongpx.format_decimal(hi)} m",
+            )
+          _ => println("  高程 = 无")
+        }
+      }
+    Err(_) => ()
+  }
+
+  println("")
   println("示例结束。")
 }
 

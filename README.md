@@ -15,8 +15,12 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 
 ## 状态
 
-**v0.1.0 已发布**（D1–D8 全部完成：坐标类型 + 完整模型 + 解析器 + 序列化 +
-独立校验 + GPX 1.0 迁移 + 轨迹统计 + 发布 mooncakes.io）
+**v0.1.0 已发布**，全部功能已完成：坐标类型 + 完整模型 + 解析器 + 序列化 +
+独立校验 + GPX 1.0 迁移 + 轨迹统计 + 发布 mooncakes.io。
+
+- 包主页：<https://mooncakes.io/package/2973181701/moongpx>
+- 版本发布：<https://github.com/2973181701/moongpx/releases/tag/v0.1.0>
+- CI：每次 push 自动跑 `moon check` / `moon fmt --check` / `moon test` / `moon run`
 
 | 模块 | 状态 |
 |---|---|
@@ -563,18 +567,17 @@ moon run cmd/main   # 可运行示例
 
 ### 关于 CI
 
-CI 配置放在 `ci/ci.yml`，**不在** `.github/workflows/` 下。启用只需一条命令：
+CI 已启用，配置在 `.github/workflows/ci.yml`。每次 push 到 `main` 或提交 PR 都会触发，
+依次执行：
 
 ```bash
-mkdir -p .github/workflows && cp ci/ci.yml .github/workflows/ci.yml
+moon check          # 类型检查
+moon fmt --check    # 格式检查
+moon test           # 单元测试
+moon run cmd/main   # 可运行示例
 ```
 
-为什么要绕这一下：GitHub 不允许 OAuth App 在没有 `workflow` scope 的情况下
-创建或修改工作流文件（无论走 git push 还是 Contents API，都会被拒）。
-把配置文件放在普通目录里可以让它**照常纳入版本控制、可审阅**，
-等 CI 权限就绪后复制过去即可生效，不必重写历史。
-
-内容本身是完整的：`moon check` → `moon fmt --check` → `moon test` → `moon run cmd/main`。
+构建状态见页面顶部的 CI 徽章。想在本地跑同样的检查，依次执行上面四条即可。
 
 ---
 

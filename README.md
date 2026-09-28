@@ -571,13 +571,15 @@ CI 已启用，配置在 `.github/workflows/ci.yml`。每次 push 到 `main` 或
 依次执行：
 
 ```bash
-moon check          # 类型检查
-moon fmt --check    # 格式检查
-moon test           # 单元测试
-moon run cmd/main   # 可运行示例
+moon check --deny-warn   # 类型检查（告警即失败）
+moon fmt --check         # 格式检查
+moon build --target wasm-gc   # 构建 wasm-gc
+moon build --target js        # 构建 js
+moon test                # 单元测试
+moon run cmd/main        # 可运行示例
 ```
 
-构建状态见页面顶部的 CI 徽章。想在本地跑同样的检查，依次执行上面四条即可。
+构建状态见页面顶部的 CI 徽章。想在本地跑同样的检查，依次执行上面几条即可。
 
 ---
 

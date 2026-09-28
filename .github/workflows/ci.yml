@@ -8,7 +8,7 @@ on:
 
 jobs:
   verify:
-    name: check / fmt / test / run
+    name: check / fmt / build / test / run
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,10 +26,16 @@ jobs:
         run: moon update
 
       - name: Type check
-        run: moon check
+        run: moon check --deny-warn
 
       - name: Format check
         run: moon fmt --check
+
+      - name: Build (wasm-gc)
+        run: moon build --target wasm-gc
+
+      - name: Build (js)
+        run: moon build --target js
 
       - name: Run tests
         run: moon test

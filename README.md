@@ -13,6 +13,21 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 
 ---
 
+## 项目目标
+
+为 MoonBit 生态提供一个**严格依据官方规范**的 GPX 处理库，覆盖从解析、校验、序列化
+到版本迁移与轨迹统计的完整链路，使任何需要处理 GPS 轨迹的 MoonBit 项目都能直接依赖，
+而不必各自重写解析器、重复踩 schema 约束的坑。
+
+两条自我约束：
+
+- **边界由官方 GPX Schema 定义，不由本项目定义**——只做规范写明的东西。
+  坐标系转换、地图渲染、其他格式互转都不做（见「已知边界」）。
+- **不重复造轮子**——XML 解析已是成熟问题，复用生态中已有的 XML 词法层，
+  本项目专注于 XML 之上的 GPX 语义层。
+
+---
+
 ## 状态
 
 **v0.1.0 已发布**，全部功能已完成：坐标类型 + 完整模型 + 解析器 + 序列化 +
@@ -20,7 +35,7 @@ GPX 是 GPS 轨迹的**通用交换格式**。Strava、Garmin（佳明）、两�
 
 - 包主页：<https://mooncakes.io/package/2973181701/moongpx>
 - 版本发布：<https://github.com/2973181701/moongpx/releases/tag/v0.1.0>
-- CI：每次 push 自动跑 `moon check` / `moon fmt --check` / `moon test` / `moon run`
+- CI：每次 push 自动跑类型检查（告警即失败）、格式检查、双目标构建、全部测试与可运行示例
 
 | 模块 | 状态 |
 |---|---|
@@ -90,6 +105,9 @@ Runkeeper App 导出的 GPX 1.1（带 Garmin 私有扩展）、GPSBabel 导出�
 
 ## 安装
 
+**环境要求**：MoonBit 工具链 `moonc >= 0.10.14`
+（用 `moon version --all` 查看当前版本）。
+
 ```bash
 moon add 2973181701/moongpx
 ```
@@ -97,6 +115,7 @@ moon add 2973181701/moongpx
 - 包主页：<https://mooncakes.io/package/2973181701/moongpx>
 - 当前版本：`0.1.0`（Apache-2.0）
 - 唯一依赖：`Milky2018/xml@0.4.1`
+- 编译目标：`wasm-gc`（首选）与 `js`，二者均在 CI 中构建验证
 
 ---
 
@@ -559,27 +578,20 @@ XML 词法层的行为直接决定本库的正确性。以下几条**不是"测�
 ## 开发
 
 ```bash
-moon check          # 类型检查
-moon test           # 单元测试
-moon fmt            # 格式化
-moon run cmd/main   # 可运行示例
+moon check --deny-warn   # 类型检查（告警即失败；本项目零告警）
+moon fmt --check         # 格式检查
+moon build --target wasm-gc   # 构建 wasm-gc
+moon build --target js        # 构建 js
+moon test                # 单元测试（167 个）
+moon run cmd/main        # 可运行示例（11 段演示）
 ```
 
 ### 关于 CI
 
 CI 已启用，配置在 `.github/workflows/ci.yml`。每次 push 到 `main` 或提交 PR 都会触发，
-依次执行：
+**执行的正是上面这套命令**——本地跑通即等同于 CI 跑通。
 
-```bash
-moon check --deny-warn   # 类型检查（告警即失败）
-moon fmt --check         # 格式检查
-moon build --target wasm-gc   # 构建 wasm-gc
-moon build --target js        # 构建 js
-moon test                # 单元测试
-moon run cmd/main        # 可运行示例
-```
-
-构建状态见页面顶部的 CI 徽章。想在本地跑同样的检查，依次执行上面几条即可。
+构建状态见页面顶部的 CI 徽章。
 
 ---
 
